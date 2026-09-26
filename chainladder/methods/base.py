@@ -113,7 +113,22 @@ class MethodBase(BaseEstimator, EstimatorIO, Common):
             sample_weight = sample_weight.set_backend(X_new.array_backend)
         X_new.ldf_ = self.ldf_
         X_new, X_new.ldf_ = self.intersection(X_new, X_new.ldf_)
+        X_new.ldf_ = self.narrow_columns(X_new, X_new.ldf_)
         return X_new
+
+    @staticmethod
+    def narrow_columns(X: Triangle, ldf: Triangle) -> Triangle:
+        """
+        Keep only the columns of a multi-column pattern that X carries.
+
+        The column counterpart of ``intersection`` on the index: a pattern fit
+        on several columns and applied to a subset of them would otherwise be
+        broadcast across every column it was fit on. ``validate_ldf`` has
+        already rejected columns outside the fit, so a shorter X is a subset.
+        """
+        if len(ldf.columns) > 1 and len(X.columns) < len(ldf.columns):
+            return ldf[list(X.columns)]
+        return ldf
 
     def intersection(self, a, b):
         """

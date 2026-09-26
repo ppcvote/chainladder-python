@@ -326,6 +326,7 @@ class CapeCod(Benktander):
         X_new = X.copy()
         self.validate_ldf(X_new, self.ldf_)
         _, X_new.ldf_ = self.intersection(X_new, self.ldf_)
+        X_new.ldf_ = self.narrow_columns(X_new, X_new.ldf_)
         # If model was fit at a higher grain, then need to aggregate predicted aprioris too
         if len(set(sample_weight.key_labels) - set(self.apriori_.key_labels)) > 0:
             apriori_, detrended_apriori_ = self._get_capecod_aprioris(

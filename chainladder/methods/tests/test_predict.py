@@ -301,9 +301,84 @@ def test_predict_columns_follow_the_width_of_the_fit(clrd):
     with pytest.raises(ValueError, match="columns the model was not fit on"):
         multi.predict(paid_and_bulk)
 
-    # A subset of the fitted columns is allowed. It does not narrow yet, which
-    # is its own change rather than part of this one.
-    assert multi.predict(paid).ultimate_.shape[0] == paid.shape[0]
+    # A subset of the fitted columns narrows to that subset.
+    assert multi.predict(paid).ultimate_.columns.tolist() == ["CumPaidLoss"]
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    [
+        cl.Chainladder,
+        cl.MackChainladder,
+        cl.BornhuetterFerguson,
+        cl.Benktander,
+        cl.CapeCod,
+        cl.ExpectedLoss,
+    ],
+)
+def test_predict_narrows_to_the_columns_passed(clrd, estimator):
+    """
+    github issue #1288
+
+    Predicting on a subset of the columns a pattern was fit on used to
+    broadcast the pattern across every fitted column. Chainladder returned an
+    extra column built from the caller's data, the exposure methods returned an
+    ultimate whose values carried two columns under one label so `to_frame`
+    raised, and MackChainladder raised inside the recursion. Each now matches
+    fitting on the passed column alone.
+    """
+    paid = clrd["CumPaidLoss"].groupby("LOB").sum()
+    both = clrd[["CumPaidLoss", "IncurLoss"]].groupby("LOB").sum()
+    kwargs = {}
+    if estimator not in (cl.Chainladder, cl.MackChainladder):
+        kwargs["sample_weight"] = (
+            clrd["EarnedPremDIR"].groupby("LOB").sum().latest_diagonal
+        )
+
+    got = (
+        estimator()
+        .fit(cl.Development().fit_transform(both), **kwargs)
+        .predict(paid, **kwargs)
+        .ultimate_
+    )
+    expected = (
+        estimator()
+        .fit(cl.Development().fit_transform(paid), **kwargs)
+        .predict(paid, **kwargs)
+        .ultimate_
+    )
+
+    assert got.columns.tolist() == ["CumPaidLoss"]
+    assert got.shape == expected.shape
+    assert np.allclose(
+        got.set_backend("numpy").values,
+        expected.set_backend("numpy").values,
+        equal_nan=True,
+    )
+    got.to_frame(origin_as_datetime=False)
+
+
+def test_predict_narrows_mack_standard_errors(clrd):
+    """
+    github issue #1288
+
+    MackChainladder carries sigma_, std_err_ and w_ from the fit as well, so
+    they narrow with the pattern and the errors match a fit on paid alone.
+    """
+    paid = clrd["CumPaidLoss"].groupby("LOB").sum()
+    both = clrd[["CumPaidLoss", "IncurLoss"]].groupby("LOB").sum()
+
+    got = cl.MackChainladder().fit(cl.Development().fit_transform(both)).predict(paid)
+    expected = (
+        cl.MackChainladder().fit(cl.Development().fit_transform(paid)).predict(paid)
+    )
+
+    for attr in ("mack_std_err_", "parameter_risk_", "process_risk_"):
+        assert np.allclose(
+            getattr(got, attr).set_backend("numpy").values,
+            getattr(expected, attr).set_backend("numpy").values,
+            equal_nan=True,
+        ), attr
 
 
 def test_predict_still_allows_an_aggregate_pattern(clrd):

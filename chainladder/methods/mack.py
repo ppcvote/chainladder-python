@@ -227,10 +227,14 @@ class MackChainladder(Chainladder):
             (Total,)  1475.539173
         """
         X_new = super().predict(X, sample_weight)
-        X_new.sigma_ = getattr(X_new, "sigma_", self.X_.sigma_)
-        X_new.std_err_ = getattr(X_new, "std_err_", self.X_.std_err_)
+        X_new.sigma_ = getattr(
+            X_new, "sigma_", self.narrow_columns(X_new, self.X_.sigma_)
+        )
+        X_new.std_err_ = getattr(
+            X_new, "std_err_", self.narrow_columns(X_new, self.X_.std_err_)
+        )
         X_new.average_ = getattr(X_new, "average_", self.X_.average_)
-        X_new.w_ = getattr(X_new, "w_", self.X_.w_)
+        X_new.w_ = getattr(X_new, "w_", self._narrow_weights(X_new))
         X_new._full_triangle_ = X_new.full_triangle_
         X_new.parameter_risk_ = self._mack_recursion("parameter_risk_", X_new)
         X_new.process_risk_ = self._mack_recursion("process_risk_", X_new)
@@ -282,6 +286,14 @@ class MackChainladder(Chainladder):
             2013  0.035752  0.030671  0.024143  0.008094  0.001121  0.001193  0.0
         """
         return self._get_full_std_err_(self.X_)
+
+    def _narrow_weights(self, X):
+        """``w_`` is a plain array with the fitted columns on axis 1."""
+        w = self.X_.w_
+        if w.shape[1] > 1 and len(X.columns) < w.shape[1]:
+            fitted = list(self.X_.columns)
+            w = w[:, [fitted.index(c) for c in X.columns]]
+        return w
 
     def _get_full_std_err_(self, X=None):
         from chainladder.utils.utility_functions import num_to_nan
